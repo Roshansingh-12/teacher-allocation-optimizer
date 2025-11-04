@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Teacher Allocation Optimizer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #f4f6f8;
+      margin: 0;
+      padding: 2rem;
+      color: #333;
+    }
+
+    h2 {
+      text-align: center;
+      color: #2c3e50;
+      margin-bottom: 2rem;
+    }
+
+    form {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    input[type="number"], select {
+      padding: 0.5rem;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 150px;
+    }
+
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background-color: #3498db;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #2980b9;
+    }
+
+    pre {
+      background-color: #ffffff;
+      padding: 1rem;
+      border-radius: 6px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.05);
+      max-width: 800px;
+      margin: 0 auto 2rem;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .chart-container {
+      max-width: 900px;
+      margin: 2rem auto;
+    }
+
+    canvas {
+      margin-bottom: 3rem;
+    }
+  </style>
+</head>
+<body>
+  <h2>📚 Teacher Allocation Optimizer</h2>
+  <form id="form">
+    Budget: <input type="number" id="budget" value="10"/>
+    Strategy:
+    <select id="strategy">
+      <option value="spread">Spread (1 per district)</option>
+      <option value="focused">Focused (up to 3 per district)</option>
+    </select>
+    <button type="submit">Optimize</button>
+  </form>
+
+  <pre id="output"></pre>
+
+  <div class="chart-container">
+    <canvas id="teacherChart"></canvas>
+    <canvas id="populationChart"></canvas>
+  </div>
+
+  <script>
+    document.getElementById("form").onsubmit = async (e) => {
+      e.preventDefault();
+      const budget = parseInt(document.getElementById("budget").value);
+      const strategy = document.getElementById("strategy").value;
+
+      const res = await fetch("/optimize", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({budget, strategy})
+      });
+
+      const data = await res.json();
+      document.getElementById("output").innerText = JSON.stringify(data, null, 2);
+
+      const allocations = data.allocations;
+
+      const labels = allocations.map(d => d["DISTRICT NAME"]);
+      const teacherCounts = allocations.map(d => d.allocated_teachers);
+      const populations = allocations.map(d => d.total_population || 0);
+      const totalPop = populations.reduce((a, b) => a + b, 0);
+
+      const chartOptions = (title, yLabel) => ({
+        responsive: true,
+        plugins: {
+          datalabels: {
+            anchor: 'end',
+            align: 'top',
+            formatter: Math.round,
+            font: { weight: 'bold' }
+          },
+          title: {
+            display: true,
+            text: title
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: {
+              display: true,
+              text: yLabel
+            }
+          }
+        }
+      });
+
+      // 🧑‍🏫 Teachers Allocated Chart
+      new Chart(document.getElementById("teacherChart"), {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Teachers Allocated",
+            data: teacherCounts,
+            backgroundColor: "rgba(75, 192, 192, 0.6)"
+          }]
+        },
+        options: chartOptions("Teachers Allocated per District", "Number of Teachers"),
+        plugins: [ChartDataLabels]
+      });
+
+      // 🧑‍🤝‍🧑 Population Share Chart (with % and NaN fix)
+      new Chart(document.getElementById("populationChart"), {
+        type: "pie",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Population Share",
+            data: populations,
+            backgroundColor: labels.map((_, i) =>
+              `hsl(${i * 30 % 360}, 70%, 60%)`
+            )
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: {
+              position: 'right',
+              labels: {
+                boxWidth: 20,
+                font: { size: 12 }
+              }
+            },
+            datalabels: {
+              formatter: (value) => {
+                if (!value || isNaN(value) || totalPop === 0) return "";
+                const percent = (value / totalPop) * 100;
+                return isNaN(percent) || percent === 0 ? "" : percent.toFixed(1) + "%";
+              },
+              color: '#fff',
+              font: { weight: 'bold' }
+            },
+            title: {
+              display: true,
+              text: "Population Share of Allocated Districts"
+            }
+          }
+        },
+        plugins: [ChartDataLabels]
+      });
+    };
+  </script>
+</body>
+</html>
